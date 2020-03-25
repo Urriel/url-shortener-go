@@ -1,2 +1,2 @@
 # url-shortener
-Shorten url provided
+Quick go experimentation
