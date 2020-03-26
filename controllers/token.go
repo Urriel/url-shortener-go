@@ -33,39 +33,6 @@ type tokenController struct {
 
 // === Create Token ===
 
-func (controller *tokenController) Create(w http.ResponseWriter, r *http.Request) {
-	payload := readNewBody(r)
-	generatedToken, err := utils.GenerateToken()
-	if err != nil {
-		fmt.Errorf("Cannot generate a new token : %s", err.Error())
-
-		answerPayload := &utils.HTTPError{
-			Msg:  "Cannot generate a new token",
-			Code: "TOKEN01",
-		}
-
-		w.WriteHeader(http.StatusInternalServerError)
-		answer, _ := json.Marshal(answerPayload)
-		w.Write(answer)
-		return
-	}
-
-	err = controller.DB.C("tokens").Insert(&models.Token{
-		URL:   payload.URL,
-		Token: generatedToken,
-	})
-	if err != nil {
-		fmt.Errorf("Cannot save the new token in the database : %s", err.Error())
-	}
-
-	answerPayload := &createResponsePayload{
-		Token: generatedToken,
-		URL:   payload.URL,
-	}
-	answer, _ := json.Marshal(answerPayload)
-	w.Write(answer)
-}
-
 // createRequestPayload should handle the request body
 type createRequestPayload struct {
 	URL string `json:"url"`
@@ -77,17 +44,45 @@ type createResponsePayload struct {
 	URL   string `json:"url"`
 }
 
-func readNewBody(r *http.Request) *createRequestPayload {
-	bodyBuf := make([]byte, r.ContentLength)
-	r.Body.Read(bodyBuf)
+func (controller *tokenController) Create(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "application/json")
 
-	payload := new(createRequestPayload)
-	err := json.Unmarshal(bodyBuf, payload)
+	buff := utils.ReadBody(r)
+	body := new(createRequestPayload)
+	err := json.Unmarshal(buff, body)
 	if err != nil {
-		fmt.Errorf("Cannot unmarshal the request body : %s", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		utils.WriteJSONError(w, "JSON payload invalid")
+		return
 	}
 
-	return payload
+	generatedToken, err := utils.GenerateToken()
+	if err != nil {
+		_ = fmt.Errorf("Cannot generate a new token : %s", err.Error())
+
+		w.WriteHeader(http.StatusInternalServerError)
+		utils.WriteJSONError(w, "Cannot generate a new token")
+		return
+	}
+
+	err = controller.DB.C("tokens").Insert(&models.Token{
+		URL:    body.URL,
+		Token:  generatedToken,
+		Visits: 0,
+	})
+	if err != nil {
+		fmt.Errorf("Cannot save the new token in the database : %s", err.Error())
+
+		w.WriteHeader(http.StatusInternalServerError)
+		utils.WriteJSONError(w, "Cannot save the new token")
+		return
+	}
+
+	payload := &createResponsePayload{
+		Token: generatedToken,
+		URL:   body.URL,
+	}
+	utils.WriteJSONSuccess(w, payload)
 }
 
 // === Index Token ===
@@ -97,6 +92,8 @@ type indexResponsePayload struct {
 }
 
 func (controller *tokenController) Index(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "application/json")
+
 	tokens := []models.Token{}
 
 	err := controller.DB.C("tokens").Find(bson.M{}).All(&tokens)
@@ -130,8 +127,8 @@ func (controller *tokenController) Redirect(c web.C, w http.ResponseWriter, r *h
 	if err != nil {
 		fmt.Errorf("Cannot find the right token : %s", err.Error())
 
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("Redirection not found"))
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Sorry we cannot forward you to the right url, try again later"))
 		return
 	}
 
@@ -141,6 +138,12 @@ func (controller *tokenController) Redirect(c web.C, w http.ResponseWriter, r *h
 		w.WriteHeader(http.StatusNotFound)
 		w.Write([]byte("Redirection not found"))
 		return
+	}
+
+	// Increment the number of visits
+	err = controller.DB.C("tokens").Update(bson.M{"token": tokenString}, bson.M{"$inc": bson.M{"visits": 1}})
+	if err != nil {
+		fmt.Errorf("Cannot increment the visit counter : %s", err.Error())
 	}
 
 	http.Redirect(w, r, tokenModel.URL, http.StatusPermanentRedirect)

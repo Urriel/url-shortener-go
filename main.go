@@ -22,6 +22,7 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }
 
+// getMongoDatabase get a pointer to the database to use
 func getMongoDatabase(session *mgo.Session) *mgo.Database {
 	var DB *mgo.Database
 
@@ -30,6 +31,7 @@ func getMongoDatabase(session *mgo.Session) *mgo.Database {
 		fmt.Printf("Getting Mongo Database : '%s'\n", mongoDatabase)
 		DB = session.DB(mongoDatabase)
 	} else {
+		// for testing purpose only
 		fmt.Println("Getting Mongo Database : 'urldb'", mongoDatabase)
 		DB = session.DB("urldb")
 	}
@@ -37,6 +39,7 @@ func getMongoDatabase(session *mgo.Session) *mgo.Database {
 	return DB
 }
 
+// getMongoSession Connect the mongodb driver to the mongodb database
 func getMongoSession() *mgo.Session {
 	var session *mgo.Session
 	var err error
@@ -46,6 +49,7 @@ func getMongoSession() *mgo.Session {
 		fmt.Println("Connecting to MONGO_URL")
 		session, err = mgo.Dial(mongoURL)
 	} else {
+		// for testing purpose only
 		fmt.Println("Connecting to the default mongo url")
 		session, err = mgo.Dial("mongodb://localhost:27017/urldb")
 	}
